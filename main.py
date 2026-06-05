@@ -93,7 +93,7 @@ def add_sensor_wall_fallback(detections, sensor_distance: float):
 
 
 def stabilize_decision(command: str, message: str, obstacle: str, distance: float, reason: str):
-    if command == "DANGER":
+    if command == "DANGER" or obstacle == "oi oi oi":
         command_state.update(
             stable_command=command,
             candidate_command=command,

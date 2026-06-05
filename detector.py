@@ -1,5 +1,6 @@
 import logging
 from schemas import Detection
+from demo_phrase_detector import detect_demo_phrases
 from image_utils import normalize_bbox
 from navigator import estimate_distance_from_bbox
 import config
@@ -96,8 +97,9 @@ class ObjectDetector:
         return None
 
     def detect(self, frame_bgr) -> list[Detection]:
+        demo_detections = detect_demo_phrases(frame_bgr)
         if self.model is None:
-            return []
+            return demo_detections
 
         height, width = frame_bgr.shape[:2]
         results = self.model.predict(
@@ -131,7 +133,7 @@ class ObjectDetector:
                         source="yolo",
                     )
                 )
-        return detections
+        return demo_detections + detections
 
 
 detector = ObjectDetector()

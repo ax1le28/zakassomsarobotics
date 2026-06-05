@@ -153,6 +153,22 @@ close, raise it such as `1.2`.
 - `-` - decrease simulated ultrasonic distance
 - `0` - reset simulated distance to `5.0m`
 
+## Demo Phrase Detection
+
+For presentation/demo use, the backend has a small OpenCV text-template detector
+for `Oi Oi Oi`. If the camera sees that phrase, `/analyze` returns:
+
+```json
+{
+  "command": "STOP",
+  "message": "oi oi oi",
+  "obstacle": "oi oi oi"
+}
+```
+
+This is separate from YOLO training and can be removed later without affecting
+the normal obstacle detector.
+
 ## ESP32 Camera Test
 
 Laptop webcam debug uses `webcam_debug.py`. ESP32 camera testing uses a separate

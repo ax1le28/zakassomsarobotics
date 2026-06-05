@@ -10,6 +10,7 @@ STOP_M = 0.9
 
 # COCO names plus common indoor/outdoor obstacle aliases.
 REAL_HEIGHTS_M = {
+    "oi oi oi": 0.30,
     "person": 1.70,
     "bicycle": 1.10,
     "car": 1.50,
@@ -358,6 +359,14 @@ def enrich_detections(detections: list[Detection], sensor_distance: float = 5.0)
     prepared = []
     for det in detections:
         det.label = det.label.lower().strip()
+        if det.label == "oi oi oi":
+            det.position = position_from_bbox(det.bbox)
+            det.distance = min(det.distance, sensor_distance) if 0 < sensor_distance < 5.0 else det.distance
+            det.action = "STOP"
+            det.priority = 9.0
+            det.risk = 0.0
+            prepared.append(det)
+            continue
         if bbox_area(det.bbox) < config.MIN_BOX_AREA and det.label not in {"person", "dog", "cat", "phone", "mouse"}:
             continue
         det.position = position_from_bbox(det.bbox)
@@ -367,10 +376,15 @@ def enrich_detections(detections: list[Detection], sensor_distance: float = 5.0)
 
     clearances = side_clearances(prepared)
     for det in prepared:
+        if det.label == "oi oi oi":
+            continue
         det.risk = priority_for(det)
     risks = zone_risks(prepared)
     enriched = []
     for det in prepared:
+        if det.label == "oi oi oi":
+            enriched.append(det)
+            continue
         det.action = action_for(det, clearances, risks)
         det.priority = det.risk
         if det.priority > 0.0:
@@ -400,6 +414,17 @@ def decision_reason(command: str, obstacle: str, distance: float, zones: dict[st
 
 def choose_primary(detections: list[Detection], sensor_distance: float) -> tuple[str, str, str, float, str, dict[str, float]]:
     zones = zone_risks(detections)
+    demo_phrase = next((det for det in detections if det.label == "oi oi oi"), None)
+    if demo_phrase:
+        return (
+            "STOP",
+            "oi oi oi",
+            "oi oi oi",
+            round(demo_phrase.distance, 2),
+            "demo phrase detected",
+            zones,
+        )
+
     if 0 < sensor_distance <= DANGER_M:
         return (
             "DANGER",
