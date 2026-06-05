@@ -77,14 +77,15 @@ def write_labels(model: YOLO, image_paths: list[Path], label_dir: Path, conf: fl
     label_dir.mkdir(parents=True, exist_ok=True)
     total_boxes = 0
 
-    for result in model.predict(
+    predictions = model.predict(
         source=[str(path) for path in image_paths],
         conf=conf,
         imgsz=imgsz,
         stream=True,
         verbose=False,
-    ):
-        image_path = Path(result.path)
+    )
+
+    for image_path, result in zip(image_paths, predictions):
         label_path = label_dir / f"{image_path.stem}.txt"
         rows = []
 
@@ -157,4 +158,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

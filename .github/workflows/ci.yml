@@ -34,6 +34,7 @@ jobs:
             schemas.py \
             speaker.py \
             webcam_debug.py \
+            scripts/autolabel_officedata.py \
             scripts/collect_frames.py \
             scripts/export_model.py \
             scripts/speak_output.py \
@@ -83,4 +84,3 @@ jobs:
             firmware/platformio_esp32_camera_client/.pio/build/${{ matrix.env }}/firmware.bin
             firmware/platformio_esp32_camera_client/.pio/build/${{ matrix.env }}/firmware.elf
           if-no-files-found: error
-
