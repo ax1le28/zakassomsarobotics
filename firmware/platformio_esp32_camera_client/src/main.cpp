@@ -10,8 +10,21 @@
 static const uint32_t FRAME_INTERVAL_MS = 1200;
 static const uint32_t HTTP_TIMEOUT_MS = 9000;
 static const int JPEG_QUALITY = 18;
+static const float FALLBACK_DISTANCE_M = 5.0f;
 
 unsigned long lastFrameMs = 0;
+
+enum HapticMode {
+  HAPTIC_CLEAR,
+  HAPTIC_LEFT,
+  HAPTIC_RIGHT,
+  HAPTIC_STOP,
+  HAPTIC_DANGER
+};
+
+HapticMode hapticMode = HAPTIC_CLEAR;
+unsigned long hapticLastToggleMs = 0;
+bool hapticPulseOn = false;
 
 String base64Encode(const uint8_t* data, size_t len) {
   size_t encodedLen = 0;
@@ -52,6 +65,123 @@ String jsonStringValue(const String& json, const char* key) {
     return "";
   }
   return json.substring(firstQuote + 1, secondQuote);
+}
+
+void writeBuzzer(int pin, bool on) {
+  digitalWrite(pin, on == (BUZZER_ACTIVE_HIGH == 1) ? HIGH : LOW);
+}
+
+void setBuzzers(bool leftOn, bool rightOn) {
+  writeBuzzer(BUZZER_LEFT_GPIO, leftOn);
+  writeBuzzer(BUZZER_RIGHT_GPIO, rightOn);
+}
+
+void initHardwareLayer() {
+  pinMode(ULTRASONIC_TRIG_GPIO, OUTPUT);
+  pinMode(ULTRASONIC_ECHO_GPIO, INPUT);
+  digitalWrite(ULTRASONIC_TRIG_GPIO, LOW);
+
+  pinMode(BUZZER_LEFT_GPIO, OUTPUT);
+  pinMode(BUZZER_RIGHT_GPIO, OUTPUT);
+  setBuzzers(false, false);
+}
+
+float readUltrasonicOnceM() {
+  digitalWrite(ULTRASONIC_TRIG_GPIO, LOW);
+  delayMicroseconds(2);
+  digitalWrite(ULTRASONIC_TRIG_GPIO, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ULTRASONIC_TRIG_GPIO, LOW);
+
+  unsigned long timeoutUs = (unsigned long)((ULTRASONIC_MAX_DISTANCE_M * 2.0f / 343.0f) * 1000000.0f);
+  unsigned long durationUs = pulseIn(ULTRASONIC_ECHO_GPIO, HIGH, timeoutUs);
+  if (durationUs == 0) {
+    return FALLBACK_DISTANCE_M;
+  }
+
+  float meters = (durationUs * 0.000343f) / 2.0f;
+  if (meters <= 0.02f || meters > ULTRASONIC_MAX_DISTANCE_M) {
+    return FALLBACK_DISTANCE_M;
+  }
+  return meters;
+}
+
+float readUltrasonicM() {
+  float a = readUltrasonicOnceM();
+  delay(25);
+  float b = readUltrasonicOnceM();
+  delay(25);
+  float c = readUltrasonicOnceM();
+
+  if (a > b) { float t = a; a = b; b = t; }
+  if (b > c) { float t = b; b = c; c = t; }
+  if (a > b) { float t = a; a = b; b = t; }
+  return b;
+}
+
+HapticMode modeFromCommand(const String& command) {
+  if (command == "DANGER") {
+    return HAPTIC_DANGER;
+  }
+  if (command == "STOP") {
+    return HAPTIC_STOP;
+  }
+  if (command == "LEFT") {
+    return HAPTIC_LEFT;
+  }
+  if (command == "RIGHT") {
+    return HAPTIC_RIGHT;
+  }
+  return HAPTIC_CLEAR;
+}
+
+void setHapticMode(HapticMode nextMode) {
+  if (hapticMode == nextMode) {
+    return;
+  }
+  hapticMode = nextMode;
+  hapticLastToggleMs = 0;
+  hapticPulseOn = false;
+  setBuzzers(false, false);
+}
+
+void updateHaptics() {
+  unsigned long now = millis();
+  uint32_t periodMs = 0;
+  uint32_t activeMs = 0;
+
+  switch (hapticMode) {
+    case HAPTIC_DANGER:
+      periodMs = 180;
+      activeMs = 110;
+      break;
+    case HAPTIC_STOP:
+      periodMs = 420;
+      activeMs = 160;
+      break;
+    case HAPTIC_LEFT:
+    case HAPTIC_RIGHT:
+      periodMs = 520;
+      activeMs = 150;
+      break;
+    case HAPTIC_CLEAR:
+    default:
+      setBuzzers(false, false);
+      return;
+  }
+
+  if (hapticLastToggleMs == 0 || now - hapticLastToggleMs >= (hapticPulseOn ? activeMs : periodMs - activeMs)) {
+    hapticLastToggleMs = now;
+    hapticPulseOn = !hapticPulseOn;
+  }
+
+  bool left = false;
+  bool right = false;
+  if (hapticPulseOn) {
+    left = hapticMode == HAPTIC_LEFT || hapticMode == HAPTIC_STOP || hapticMode == HAPTIC_DANGER;
+    right = hapticMode == HAPTIC_RIGHT || hapticMode == HAPTIC_STOP || hapticMode == HAPTIC_DANGER;
+  }
+  setBuzzers(left, right);
 }
 
 bool initCamera() {
@@ -118,6 +248,9 @@ void connectWiFi() {
 }
 
 void sendFrame() {
+  float distanceM = readUltrasonicM();
+  Serial.printf("Ultrasonic %.2fm\n", distanceM);
+
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println("Camera capture failed");
@@ -134,8 +267,10 @@ void sendFrame() {
   }
 
   String body;
-  body.reserve(imageBase64.length() + 80);
-  body = "{\"distance\":5.0,\"speak\":true,\"image\":\"";
+  body.reserve(imageBase64.length() + 120);
+  body = "{\"distance\":";
+  body += String(distanceM, 2);
+  body += ",\"speak\":true,\"image\":\"";
   body += imageBase64;
   body += "\"}";
 
@@ -150,8 +285,14 @@ void sendFrame() {
 
   Serial.printf("HTTP %d\n", code);
   if (code == 200) {
+    String command = jsonStringValue(response, "command");
+    if (command.length() == 0) {
+      command = "STOP";
+    }
+    setHapticMode(modeFromCommand(command));
+
     Serial.print("command=");
-    Serial.print(jsonStringValue(response, "command"));
+    Serial.print(command);
     Serial.print(" obstacle=");
     Serial.print(jsonStringValue(response, "obstacle"));
     Serial.print(" message=");
@@ -160,6 +301,7 @@ void sendFrame() {
     Serial.print("HTTP error: ");
     Serial.println(error);
     Serial.println(response);
+    setHapticMode(HAPTIC_STOP);
   }
 }
 
@@ -173,6 +315,16 @@ void setup() {
   Serial.println(CAMERA_MODEL_NAME);
   Serial.print("Backend: ");
   Serial.println(BACKEND_URL);
+  Serial.printf("HC-SR04 trig=%d echo=%d max=%.1fm\n",
+                ULTRASONIC_TRIG_GPIO,
+                ULTRASONIC_ECHO_GPIO,
+                ULTRASONIC_MAX_DISTANCE_M);
+  Serial.printf("Buzzers left=%d right=%d active_%s\n",
+                BUZZER_LEFT_GPIO,
+                BUZZER_RIGHT_GPIO,
+                BUZZER_ACTIVE_HIGH == 1 ? "HIGH" : "LOW");
+
+  initHardwareLayer();
 
   if (!initCamera()) {
     Serial.println("Stop: camera init failed. Check selected env/pin map.");
@@ -192,5 +344,6 @@ void loop() {
     lastFrameMs = millis();
     sendFrame();
   }
+  updateHaptics();
   delay(10);
 }

@@ -190,6 +190,44 @@ The ESP32 sends camera JPEG frames to the laptop backend and prints the backend
 The ESP32 request sets `"speak": true`, so non-clear navigation commands are
 spoken aloud on the laptop backend.
 
+## ESP32 HC-SR04 and Buzzers
+
+The ESP32 firmware now reads HC-SR04 before every camera upload and sends the
+real sensor distance as `distance` in `POST /analyze`. The backend uses this as
+the primary close-range distance signal and fuses it with YOLO bbox distance.
+
+Configure hardware pins in:
+
+```bash
+firmware/platformio_esp32_camera_client/src/wifi_config.h
+```
+
+Start from the example:
+
+```cpp
+#define ULTRASONIC_TRIG_GPIO 1
+#define ULTRASONIC_ECHO_GPIO 2
+#define BUZZER_LEFT_GPIO 41
+#define BUZZER_RIGHT_GPIO 42
+#define BUZZER_ACTIVE_HIGH 1
+#define ULTRASONIC_MAX_DISTANCE_M 4.5f
+```
+
+Do not use camera pins from `camera_pins.h`. On the Freenove ESP32-S3 camera
+setup, GPIO `6` and `7` are camera pins, so they cannot be used for buzzers while
+the camera is enabled.
+
+HC-SR04 echo is commonly 5V. ESP32 GPIO is 3.3V, so use a voltage divider or
+level shifter on `ECHO`.
+
+Buzzer patterns:
+
+- `CLEAR` - both off
+- `LEFT` - left buzzer pulses
+- `RIGHT` - right buzzer pulses
+- `STOP` - both buzzers slow pulse
+- `DANGER` - both buzzers fast pulse
+
 ## Speak Output Test
 
 To test laptop TTS without camera/backend:
