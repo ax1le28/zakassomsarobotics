@@ -1,4 +1,5 @@
 import logging
+import re
 import subprocess
 import threading
 import queue
@@ -31,6 +32,17 @@ def _say(text: str):
     subprocess.run(["say", "-r", "175", text], capture_output=True, timeout=12)
 
 
+def _short_error(exc: Exception) -> str:
+    text = str(exc)
+    status_match = re.search(r"status_code:\s*(\d+)", text)
+    message_match = re.search(r"'message':\s*'([^']+)'", text)
+    if status_match and message_match:
+        return f"HTTP {status_match.group(1)}: {message_match.group(1)}"
+    if message_match:
+        return message_match.group(1)
+    return text[:240]
+
+
 def _worker():
     global _elevenlabs_disabled
     while True:
@@ -50,7 +62,7 @@ def _worker():
                     )
                     stream(audio)
                 except Exception as exc:
-                    logger.warning("ElevenLabs failed, using system TTS: %s", exc)
+                    logger.warning("ElevenLabs failed, using system TTS: %s", _short_error(exc))
                     _elevenlabs_disabled = True
                     _say(text)
             else:
