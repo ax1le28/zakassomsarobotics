@@ -398,6 +398,30 @@ def decision_reason(command: str, obstacle: str, distance: float, zones: dict[st
     return f"zone risks: {zones}"
 
 
+def best_escape_side(primary: Detection, zones: dict[str, float], clearances: dict[str, float]) -> str | None:
+    if primary.label in {"stairs", "staircase", "steps", "step"}:
+        return None
+
+    left_risk = zones.get("left", 0.0)
+    right_risk = zones.get("right", 0.0)
+    left_clear = clearances.get("left", 5.0)
+    right_clear = clearances.get("right", 5.0)
+
+    if left_clear < 0.9 and right_clear < 0.9:
+        return None
+    if left_clear >= 1.2 and (left_risk + 0.35 < right_risk or left_clear > right_clear + 0.35):
+        return "left"
+    if right_clear >= 1.2 and (right_risk + 0.35 < left_risk or right_clear > left_clear + 0.35):
+        return "right"
+    if left_clear >= 1.2 and right_clear >= 1.2:
+        return "right" if bbox_center_x(primary.bbox) < 500 else "left"
+    if left_clear >= 1.2:
+        return "left"
+    if right_clear >= 1.2:
+        return "right"
+    return None
+
+
 def choose_primary(detections: list[Detection], sensor_distance: float) -> tuple[str, str, str, float, str, dict[str, float]]:
     zones = zone_risks(detections)
     if 0 < sensor_distance <= DANGER_M:
@@ -436,6 +460,8 @@ def choose_primary(detections: list[Detection], sensor_distance: float) -> tuple
     command = primary.action
     label = primary.label
     distance = primary.distance
+    clearances = side_clearances(detections)
+    escape_side = best_escape_side(primary, zones, clearances)
 
     if command == "DANGER":
         message = f"{label} very close, stop now"
@@ -444,9 +470,17 @@ def choose_primary(detections: list[Detection], sensor_distance: float) -> tuple
     elif label in {"railing", "handrail", "banister"}:
         message = f"Railing {primary.position}, keep walking carefully"
     elif label == "wall" and command == "STOP":
-        message = f"Wall {distance:.1f} meters ahead, stop"
+        message = (
+            f"Wall {distance:.1f} meters ahead, stop, then go {escape_side}"
+            if escape_side else
+            f"Wall {distance:.1f} meters ahead, stop"
+        )
     elif command == "STOP":
-        message = f"{label} {distance:.1f} meters ahead, stop"
+        message = (
+            f"{label} {distance:.1f} meters ahead, stop, then go {escape_side}"
+            if escape_side else
+            f"{label} {distance:.1f} meters ahead, stop"
+        )
     elif command == "LEFT":
         message = f"{label} {distance:.1f} meters ahead, go left"
     elif command == "RIGHT":
