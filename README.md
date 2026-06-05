@@ -153,22 +153,6 @@ close, raise it such as `1.2`.
 - `-` - decrease simulated ultrasonic distance
 - `0` - reset simulated distance to `5.0m`
 
-## Demo Phrase Detection
-
-For presentation/demo use, the backend has a small OpenCV text-template detector
-for `Oi Oi Oi`. If the camera sees that phrase, `/analyze` returns:
-
-```json
-{
-  "command": "STOP",
-  "message": "oi oi oi",
-  "obstacle": "oi oi oi"
-}
-```
-
-This is separate from YOLO training and can be removed later without affecting
-the normal obstacle detector.
-
 ## ESP32 Camera Test
 
 Laptop webcam debug uses `webcam_debug.py`. ESP32 camera testing uses a separate
@@ -254,6 +238,14 @@ python3 scripts/speak_output.py "Chair one meter ahead, go left"
 
 If `ELEVENLABS_API_KEY` is configured, `speaker.py` uses ElevenLabs. Otherwise it
 falls back to macOS `say`.
+
+Live camera and ESP32 requests set `"speak": true`, so the backend speaks
+non-clear navigation commands. Repeated messages are throttled by:
+
+```bash
+TTS_REPEAT_SECONDS=5.0
+TTS_DANGER_REPEAT_SECONDS=1.5
+```
 
 ## GitHub CI/CD
 

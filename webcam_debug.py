@@ -97,7 +97,7 @@ def main():
         try:
             payload = {
                 "distance": sensor_value,
-                "speak": False,
+                "speak": True,
                 "image": encode_frame(frame_to_send),
             }
             resp = requests.post(SERVER_URL, json=payload, timeout=8)

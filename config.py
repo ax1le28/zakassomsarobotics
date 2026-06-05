@@ -22,6 +22,8 @@ SENSOR_WALL_THRESHOLD_M = float(os.getenv("SENSOR_WALL_THRESHOLD_M", "1.6"))
 SCENE_PROFILE = os.getenv("SCENE_PROFILE", "home_office")
 
 SPEAK_ENABLED = os.getenv("SPEAK_ENABLED", "true").lower() == "true"
+TTS_REPEAT_SECONDS = float(os.getenv("TTS_REPEAT_SECONDS", "5.0"))
+TTS_DANGER_REPEAT_SECONDS = float(os.getenv("TTS_DANGER_REPEAT_SECONDS", "1.5"))
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2")

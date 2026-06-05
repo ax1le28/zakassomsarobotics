@@ -29,7 +29,6 @@ jobs:
           python -m py_compile \
             main.py \
             detector.py \
-            demo_phrase_detector.py \
             image_utils.py \
             navigator.py \
             schemas.py \
@@ -84,3 +83,4 @@ jobs:
             firmware/platformio_esp32_camera_client/.pio/build/${{ matrix.env }}/firmware.bin
             firmware/platformio_esp32_camera_client/.pio/build/${{ matrix.env }}/firmware.elf
           if-no-files-found: error
+

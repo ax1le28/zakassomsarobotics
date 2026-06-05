@@ -26,6 +26,11 @@ command_state = {
     "last_distance": 5.0,
     "last_reason": "",
 }
+speech_state = {
+    "last_command": "CLEAR",
+    "last_message": "",
+    "last_spoken_at": 0.0,
+}
 
 app = FastAPI(
     title="Rafachmo Smart Glasses Backend",
@@ -93,7 +98,7 @@ def add_sensor_wall_fallback(detections, sensor_distance: float):
 
 
 def stabilize_decision(command: str, message: str, obstacle: str, distance: float, reason: str):
-    if command == "DANGER" or obstacle == "oi oi oi":
+    if command == "DANGER":
         command_state.update(
             stable_command=command,
             candidate_command=command,
@@ -144,6 +149,32 @@ def stabilize_decision(command: str, message: str, obstacle: str, distance: floa
     )
 
 
+def should_speak_guidance(command: str, message: str) -> bool:
+    if not config.SPEAK_ENABLED or command == "CLEAR" or not message.strip():
+        return False
+
+    now = time.time()
+    last_command = speech_state["last_command"]
+    last_message = speech_state["last_message"]
+    elapsed = now - speech_state["last_spoken_at"]
+
+    changed = command != last_command or message != last_message
+    repeat_after = (
+        config.TTS_DANGER_REPEAT_SECONDS
+        if command == "DANGER"
+        else config.TTS_REPEAT_SECONDS
+    )
+
+    if changed or elapsed >= repeat_after:
+        speech_state.update(
+            last_command=command,
+            last_message=message,
+            last_spoken_at=now,
+        )
+        return True
+    return False
+
+
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
     started = time.perf_counter()
@@ -167,7 +198,7 @@ async def analyze(request: AnalyzeRequest):
     processing_ms = round((time.perf_counter() - started) * 1000, 1)
 
     should_speak = False
-    if request.speak and config.SPEAK_ENABLED and command != "CLEAR":
+    if request.speak and should_speak_guidance(command, message):
         should_speak = speak(message)
 
     return AnalyzeResponse(
