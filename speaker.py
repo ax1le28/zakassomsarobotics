@@ -1,6 +1,8 @@
 import logging
+import os
 import re
 import subprocess
+import tempfile
 import threading
 import queue
 import config
@@ -32,6 +34,34 @@ def _say(text: str):
     subprocess.run(["say", "-r", "175", text], capture_output=True, timeout=12)
 
 
+def _audio_to_bytes(audio) -> bytes:
+    if isinstance(audio, bytes):
+        return audio
+    return b"".join(chunk for chunk in audio if chunk)
+
+
+def _play_mp3(audio_bytes: bytes, text: str):
+    if not audio_bytes:
+        raise RuntimeError("ElevenLabs returned empty audio")
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            temp_path = tmp.name
+            tmp.write(audio_bytes)
+
+        # afplay is more reliable than streaming playback for short navigation
+        # prompts; it waits until the whole file is played.
+        timeout = max(8, min(30, len(text.split()) * 1.2 + 4))
+        subprocess.run(["afplay", temp_path], check=True, capture_output=True, timeout=timeout)
+    finally:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+
+
 def _short_error(exc: Exception) -> str:
     text = str(exc)
     status_match = re.search(r"status_code:\s*(\d+)", text)
@@ -53,14 +83,13 @@ def _worker():
             client = _init_elevenlabs()
             if client:
                 try:
-                    from elevenlabs import stream
                     audio = client.text_to_speech.convert(
                         text=text,
                         voice_id=config.ELEVENLABS_VOICE_ID,
                         model_id=config.ELEVENLABS_MODEL,
                         output_format="mp3_22050_32",
                     )
-                    stream(audio)
+                    _play_mp3(_audio_to_bytes(audio), text)
                 except Exception as exc:
                     logger.warning("ElevenLabs failed, using system TTS: %s", _short_error(exc))
                     _elevenlabs_disabled = True
@@ -80,6 +109,12 @@ def speak(text: str) -> bool:
     if not config.SPEAK_ENABLED or not text.strip():
         return False
     try:
+        while True:
+            try:
+                _queue.get_nowait()
+                _queue.task_done()
+            except queue.Empty:
+                break
         _queue.put_nowait(text)
         return True
     except queue.Full:
