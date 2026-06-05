@@ -327,7 +327,7 @@ def action_for(det: Detection, clearances: dict[str, float], risks: dict[str, fl
         return "CLEAR"
 
     if det.distance <= STOP_M:
-        return "STOP"
+        return "STOP" if center_corridor_overlap(det.bbox) >= 0.25 else ("RIGHT" if det.position == "left" else "LEFT")
     if det.distance <= PATH_CLOSE_M:
         return "RIGHT" if det.position == "left" else "LEFT"
     return "CLEAR"

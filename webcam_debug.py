@@ -8,7 +8,7 @@ import requests
 
 SERVER_URL = "http://127.0.0.1:8000/analyze"
 CAMERA_INDEX = 0
-SEND_INTERVAL_SEC = 0.8
+SEND_INTERVAL_SEC = 1.5
 JPEG_QUALITY = 75
 
 

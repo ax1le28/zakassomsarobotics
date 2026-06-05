@@ -28,7 +28,8 @@ command_state = {
 }
 speech_state = {
     "last_command": "CLEAR",
-    "last_message": "",
+    "last_obstacle": "none",
+    "last_distance": 5.0,
     "last_spoken_at": 0.0,
 }
 
@@ -149,26 +150,29 @@ def stabilize_decision(command: str, message: str, obstacle: str, distance: floa
     )
 
 
-def should_speak_guidance(command: str, message: str) -> bool:
+def should_speak_guidance(command: str, message: str, obstacle: str, distance: float) -> bool:
     if not config.SPEAK_ENABLED or command == "CLEAR" or not message.strip():
         return False
 
     now = time.time()
     last_command = speech_state["last_command"]
-    last_message = speech_state["last_message"]
+    last_obstacle = speech_state["last_obstacle"]
+    last_distance = speech_state["last_distance"]
     elapsed = now - speech_state["last_spoken_at"]
 
-    changed = command != last_command or message != last_message
+    changed = command != last_command or obstacle != last_obstacle
+    distance_changed = abs(distance - last_distance) >= config.TTS_DISTANCE_DELTA_M
     repeat_after = (
         config.TTS_DANGER_REPEAT_SECONDS
         if command == "DANGER"
         else config.TTS_REPEAT_SECONDS
     )
 
-    if changed or elapsed >= repeat_after:
+    if changed or distance_changed or elapsed >= repeat_after:
         speech_state.update(
             last_command=command,
-            last_message=message,
+            last_obstacle=obstacle,
+            last_distance=distance,
             last_spoken_at=now,
         )
         return True
@@ -198,7 +202,7 @@ async def analyze(request: AnalyzeRequest):
     processing_ms = round((time.perf_counter() - started) * 1000, 1)
 
     should_speak = False
-    if request.speak and should_speak_guidance(command, message):
+    if request.speak and should_speak_guidance(command, message, obstacle, distance):
         should_speak = speak(message)
 
     return AnalyzeResponse(
