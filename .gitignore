@@ -1,0 +1,21 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+.venv/
+venv/
+.env
+
+# Local model weights and generated training outputs can be large.
+*.pt
+*.onnx
+runs/
+datasets/
+
+# PlatformIO build/cache output.
+.pio/
+firmware/**/.pio/
+
+# Keep real Wi-Fi credentials out of git.
+firmware/platformio_esp32_camera_client/src/wifi_config.h
+
