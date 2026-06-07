@@ -4,7 +4,7 @@ import config
 from schemas import Detection
 
 PATH_CLOSE_M = 1.8
-DANGER_M = 0.45
+DANGER_M = config.ULTRASONIC_STOP_M
 STOP_M = 0.9
 
 
@@ -424,13 +424,13 @@ def best_escape_side(primary: Detection, zones: dict[str, float], clearances: di
 
 def choose_primary(detections: list[Detection], sensor_distance: float) -> tuple[str, str, str, float, str, dict[str, float]]:
     zones = zone_risks(detections)
-    if 0 < sensor_distance <= DANGER_M:
+    if 0 < sensor_distance <= config.ULTRASONIC_STOP_M:
         return (
-            "DANGER",
-            "Obstacle very close, stop now",
+            "STOP",
+            "Stop",
             "too close",
             sensor_distance,
-            "ultrasonic sensor reports immediate obstacle",
+            "ultrasonic safety stop",
             zones,
         )
 

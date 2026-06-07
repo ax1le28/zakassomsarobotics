@@ -99,7 +99,7 @@ def add_sensor_wall_fallback(detections, sensor_distance: float):
 
 
 def stabilize_decision(command: str, message: str, obstacle: str, distance: float, reason: str):
-    if command == "DANGER":
+    if command == "DANGER" or reason == "ultrasonic safety stop":
         command_state.update(
             stable_command=command,
             candidate_command=command,
@@ -183,6 +183,33 @@ def should_speak_guidance(command: str, message: str, obstacle: str, distance: f
 async def analyze(request: AnalyzeRequest):
     started = time.perf_counter()
     timestamp = datetime.now().isoformat()
+
+    if 0 < request.distance <= config.ULTRASONIC_STOP_M:
+        command, message, obstacle, distance, reason = stabilize_decision(
+            "STOP",
+            "Stop",
+            "too close",
+            request.distance,
+            "ultrasonic safety stop",
+        )
+        processing_ms = round((time.perf_counter() - started) * 1000, 1)
+        should_speak = False
+        if request.speak and should_speak_guidance(command, message, obstacle, distance):
+            should_speak = speak(message)
+
+        return AnalyzeResponse(
+            command=command,
+            message=message,
+            obstacle=obstacle,
+            distance=distance,
+            detections=[],
+            speak=should_speak,
+            processing_ms=processing_ms,
+            detector="ultrasonic",
+            reason=reason,
+            zones={"left": 0.0, "center": 1.0, "right": 0.0},
+            timestamp=timestamp,
+        )
 
     try:
         image = decode_base64_image(request.image)

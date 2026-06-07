@@ -7,12 +7,15 @@
 #include "camera_pins.h"
 #include "wifi_config.h"
 
-static const uint32_t FRAME_INTERVAL_MS = 1200;
-static const uint32_t HTTP_TIMEOUT_MS = 9000;
-static const int JPEG_QUALITY = 18;
+static const uint32_t FRAME_INTERVAL_MS = 900;
+static const uint32_t HTTP_TIMEOUT_MS = 3000;
+static const uint32_t WIFI_RETRY_INTERVAL_MS = 5000;
+static const int JPEG_QUALITY = 24;
 static const float FALLBACK_DISTANCE_M = 5.0f;
 
 unsigned long lastFrameMs = 0;
+unsigned long lastWifiAttemptMs = 0;
+bool wifiWasConnected = false;
 
 enum HapticMode {
   HAPTIC_CLEAR,
@@ -126,11 +129,13 @@ HapticMode modeFromCommand(const String& command) {
   if (command == "STOP") {
     return HAPTIC_STOP;
   }
+  // Backend LEFT/RIGHT are movement directions. The haptic motor should mark
+  // the obstacle side, so movement LEFT means right-side obstacle and vice versa.
   if (command == "LEFT") {
-    return HAPTIC_LEFT;
+    return HAPTIC_RIGHT;
   }
   if (command == "RIGHT") {
-    return HAPTIC_RIGHT;
+    return HAPTIC_LEFT;
   }
   return HAPTIC_CLEAR;
 }
@@ -213,8 +218,6 @@ bool initCamera() {
   config.grab_mode = CAMERA_GRAB_LATEST;
 
   if (psramFound()) {
-    config.frame_size = FRAMESIZE_VGA;
-    config.jpeg_quality = 16;
     config.fb_count = 2;
     config.fb_location = CAMERA_FB_IN_PSRAM;
   }
@@ -234,20 +237,44 @@ bool initCamera() {
   return true;
 }
 
-void connectWiFi() {
+void beginWiFiConnect() {
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.disconnect(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("WiFi connecting");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(400);
-    Serial.print(".");
+  lastWifiAttemptMs = millis();
+  wifiWasConnected = false;
+  Serial.println("WiFi connect started");
+}
+
+bool ensureWiFiConnected() {
+  wl_status_t status = WiFi.status();
+  if (status == WL_CONNECTED) {
+    if (!wifiWasConnected) {
+      wifiWasConnected = true;
+      Serial.print("WiFi connected, ESP IP: ");
+      Serial.println(WiFi.localIP());
+    }
+    return true;
   }
-  Serial.println();
-  Serial.print("WiFi connected, ESP IP: ");
-  Serial.println(WiFi.localIP());
+
+  if (wifiWasConnected) {
+    Serial.println("WiFi disconnected");
+    wifiWasConnected = false;
+  }
+
+  if (lastWifiAttemptMs == 0 || millis() - lastWifiAttemptMs >= WIFI_RETRY_INTERVAL_MS) {
+    beginWiFiConnect();
+  }
+  return false;
 }
 
 void sendFrame() {
+  if (!ensureWiFiConnected()) {
+    Serial.println("Skip frame: WiFi not connected");
+    return;
+  }
+
   float distanceM = readUltrasonicM();
   Serial.printf("Ultrasonic %.2fm\n", distanceM);
 
@@ -332,14 +359,35 @@ void setup() {
   }
   Serial.println("Camera ready");
 
-  connectWiFi();
+  beginWiFiConnect();
+}
+
+void handleSerialTestCommands() {
+  if (!Serial.available()) {
+    return;
+  }
+
+  char c = Serial.read();
+  if (c == 'l' || c == 'L') {
+    Serial.println("TEST left buzzer");
+    setHapticMode(HAPTIC_LEFT);
+  } else if (c == 'r' || c == 'R') {
+    Serial.println("TEST right buzzer");
+    setHapticMode(HAPTIC_RIGHT);
+  } else if (c == 's' || c == 'S') {
+    Serial.println("TEST both buzzers");
+    setHapticMode(HAPTIC_STOP);
+  } else if (c == 'c' || c == 'C') {
+    Serial.println("TEST clear buzzers");
+    setHapticMode(HAPTIC_CLEAR);
+  } else if (c == 'u' || c == 'U') {
+    Serial.printf("TEST ultrasonic %.2fm\n", readUltrasonicM());
+  }
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    connectWiFi();
-  }
-
+  ensureWiFiConnected();
+  handleSerialTestCommands();
   if (millis() - lastFrameMs >= FRAME_INTERVAL_MS) {
     lastFrameMs = millis();
     sendFrame();
