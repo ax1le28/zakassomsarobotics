@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ax1le28/zakassomsarobotics/actions/workflows/ci.yml"><img src="https://github.com/ax1le28/zakassomsarobotics/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ax1le28/assistive-vision-glasses/actions/workflows/ci.yml"><img src="https://github.com/ax1le28/assistive-vision-glasses/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Python-3.11-B8733F?style=flat-square&logo=python&logoColor=white" alt="Python 3.11">
   <img src="https://img.shields.io/badge/FastAPI-backend-8A6A50?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/YOLO11n-ultralytics-E3A15E?style=flat-square" alt="YOLO11n">
@@ -54,8 +54,8 @@ Do not reuse camera pins from `camera_pins.h` (on the Freenove board, GPIO 6 and
 ### Backend
 
 ```bash
-git clone https://github.com/ax1le28/zakassomsarobotics.git
-cd zakassomsarobotics
+git clone https://github.com/ax1le28/assistive-vision-glasses.git
+cd assistive-vision-glasses
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -149,6 +149,10 @@ python scripts/train_home_office.py --data training/home_office_dataset.yaml --b
 ```
 
 Then point `YOLO_MODEL` in `.env` at `runs/detect/home_office_yolo/weights/best.pt`. More detail in [`training/README.md`](training/README.md) and [`TRAINING_GUIDE.md`](TRAINING_GUIDE.md).
+
+## Team
+
+Built by [Javidan Bandaliyev](https://github.com/ax1le28) together with [Rafael Ibayev](https://github.com/falafell99).
 
 ## Project structure
 
