@@ -1,43 +1,61 @@
-# rafachmo
+<h1 align="center">Assistive Vision Glasses</h1>
 
-MVP backend for blind-assistance smart glasses.
+<p align="center">
+  Smart-glasses MVP that helps blind and visually impaired people walk around obstacles —<br>
+  an ESP32-S3 camera + ultrasonic sensor on the glasses, YOLO-based scene understanding on a laptop,<br>
+  and short spoken instructions plus left / right buzzer cues back to the user.
+</p>
 
-Architecture:
+<p align="center">
+  <a href="https://github.com/ax1le28/zakassomsarobotics/actions/workflows/ci.yml"><img src="https://github.com/ax1le28/zakassomsarobotics/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python-3.11-B8733F?style=flat-square&logo=python&logoColor=white" alt="Python 3.11">
+  <img src="https://img.shields.io/badge/FastAPI-backend-8A6A50?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/YOLO11n-ultralytics-E3A15E?style=flat-square" alt="YOLO11n">
+  <img src="https://img.shields.io/badge/ESP32--S3-PlatformIO-B8733F?style=flat-square&logo=espressif&logoColor=white" alt="ESP32-S3">
+  <img src="https://img.shields.io/badge/status-MVP-A3B18A?style=flat-square" alt="status MVP">
+</p>
 
-```text
-ESP32-CAM / sensor client
-  -> sends JPEG frame + ultrasonic distance
-  -> POST /analyze
+<p align="center">
+  <img src="docs/architecture.svg" width="100%" alt="Architecture: ESP32-S3 sends camera frames and ultrasonic distance to a FastAPI backend running YOLO11n detection, distance fusion and navigation, which drives speech and left/right buzzers">
+</p>
 
-Laptop backend
-  -> object detection
-  -> distance/depth estimation
-  -> navigation decision
-  -> text instruction
-  -> TTS / speaker output
+## How it works
 
-Speaker output
-  -> laptop speakers, Bluetooth speaker, or future speaker endpoint
-```
+1. **Glasses (ESP32-S3).** A thin client captures a JPEG frame, reads the HC-SR04 ultrasonic distance and sends both to `POST /analyze`.
+2. **Backend (laptop, FastAPI).** Local YOLO detects objects, distance is estimated from bounding-box geometry and fused with the ultrasonic reading, and the navigator scores left / center / right risk to pick a command.
+3. **Feedback.** The backend speaks a short instruction (ElevenLabs, or macOS `say` as a fallback) and the ESP32 drives two buzzers with a matching pattern.
 
-The ESP32 is intentionally a thin client. It should capture frames, read simple
-sensors, and send data to the laptop. AI runs on the laptop.
+The ESP32 is intentionally kept simple: it only captures, senses and sends. All AI runs on the laptop.
 
-## Current ESP32 Setup
+## Features
 
-The connected ESP32 currently appears on macOS as:
+- **Obstacle detection** with local YOLO (`yolo11n.pt` by default), plus scripts to fine-tune it on home and office scenes.
+- **Distance fusion** — bbox height, object class and vertical position, fused with ultrasonic distance for center-path obstacles.
+- **Navigation logic** — walking-corridor overlap, left / center / right risk scores, object relevance, bbox size and confidence.
+- **Calm guidance** — temporal distance smoothing, command stability frames against flicker, and throttled repeat messages.
+- **Scene-aware labels** — separate home and office label sets; small items (keyboard, phone, cables…) stay low priority unless close or in the corridor.
+- **Structural hazards** — stairs and steps trigger a dedicated stop instruction; a center-path *wall* fallback kicks in when ultrasonic sees an obstacle that vision misses.
+- **Buzzer patterns** — `CLEAR`, `LEFT`, `RIGHT`, `STOP` (slow pulse), `DANGER` (fast pulse).
+- **CI** — GitHub Actions compiles the Python code and builds firmware for both supported boards.
+
+## Hardware
+
+| Part | Notes |
+| --- | --- |
+| ESP32-S3 camera board | Freenove ESP32-S3 WROOM or Seeed XIAO ESP32S3 Sense |
+| HC-SR04 ultrasonic sensor | Echo is 5 V — use a voltage divider or level shifter to 3.3 V |
+| 2 × buzzer | Left / right, default GPIO 41 and 42 |
+| Laptop | Runs the backend and text-to-speech |
+
+Do not reuse camera pins from `camera_pins.h` (on the Freenove board, GPIO 6 and 7 belong to the camera).
+
+## Quick start
+
+### Backend
 
 ```bash
-/dev/cu.usbmodem1101
-```
-
-The ESP32 only captures camera frames and sends them to the laptop backend. The
-laptop speaks navigation output aloud using `speaker.py`.
-
-## Run
-
-```bash
-cd /Users/ax1le/Downloads/zakassomsarobotics-lastbranch
+git clone https://github.com/ax1le28/zakassomsarobotics.git
+cd zakassomsarobotics
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -45,66 +63,50 @@ cp .env.example .env
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-The backend uses local YOLO (`ultralytics`) for object detection. On first run it
-downloads `yolo11n.pt`.
+On first run, `ultralytics` downloads `yolo11n.pt`.
 
-Distance is estimated from bbox height, object class, and how low the object is
-in the frame. With ESP32 ultrasonic distance, the backend fuses sensor distance
-with vision distance for center-path obstacles.
-
-Navigation uses:
-
-- walking-path corridor overlap
-- left / center / right risk scores
-- object class relevance
-- bbox size and confidence
-- temporal smoothing for distance
-- command stability frames to reduce flicker
-
-Office-aware labels include: `desk`, `office chair`, `monitor`, `laptop`,
-`keyboard`, `mouse`, `phone`, `book`, `cup`, `bottle`, `printer`,
-`whiteboard`, `filing cabinet`, `trash can`, and `plant`. Small office items are
-kept as context unless they are close or inside the walking corridor.
-
-Home-aware labels include: `wall`, `door`, `doorway`, `stairs`, `sofa`, `bed`,
-`cabinet`, `wardrobe`, `drawer`, `bookshelf`, `nightstand`, `coffee table`,
-`side table`, `floor lamp`, `rug`, `storage box`, `laundry basket`, `backpack`,
-and `suitcase`.
-
-Walls are hard for generic YOLO. For the MVP, the backend adds a center-path
-`wall` fallback when the ultrasonic sensor reports a close obstacle but vision
-does not find a better object.
-
-Structural labels include `wall`, `door`, `doorway`, `stairs`, `step`,
-`railing`, and `handrail`. Stairs/steps in the walking corridor produce a
-specific stop instruction. Railings/handrails are treated as context unless they
-block the center path.
-
-Small non-critical items such as `keyboard`, `mouse`, `phone`, `book`, `paper`,
-`notebook`, `cable`, and `charger` stay low priority unless they are close or
-inside the walking corridor.
-
-Calibration knobs in `.env`:
+### Firmware
 
 ```bash
-CAMERA_VERTICAL_FOV_DEG=55
-DISTANCE_SCALE=1.0
-DISTANCE_SMOOTHING_ALPHA=0.45
+cp firmware/platformio_esp32_camera_client/src/wifi_config.example.h \
+   firmware/platformio_esp32_camera_client/src/wifi_config.h
 ```
 
-If distance reads too far, lower `DISTANCE_SCALE` such as `0.8`. If it reads too
-close, raise it such as `1.2`.
+Edit `wifi_config.h` with your Wi-Fi credentials, the backend URL (`http://<laptop-ip>:8000/analyze`) and the sensor / buzzer pins, then build and flash with PlatformIO:
 
-## ESP32 Request
+```bash
+pio run -d firmware/platformio_esp32_camera_client -e freenove_esp32_s3_wroom -t upload
+```
+
+Available environments: `freenove_esp32_s3_wroom`, `seeed_xiao_esp32s3_sense`. `wifi_config.h` is git-ignored so credentials never get committed.
+
+### No hardware? Use the webcam
+
+```bash
+python webcam_debug.py
+```
+
+| Key | Action |
+| --- | --- |
+| `Q` / `Esc` | quit |
+| `+` / `-` | increase / decrease simulated ultrasonic distance |
+| `0` | reset simulated distance to 5.0 m |
+
+Test speech on its own:
+
+```bash
+python3 scripts/speak_output.py "Chair one meter ahead, go left"
+```
+
+## API
+
+`POST /analyze`
 
 ```json
-{
-  "distance": 1.2,
-  "image": "base64-jpeg"
-}
+{ "distance": 1.2, "image": "<base64 jpeg>", "speak": true }
 ```
 
-## Backend Response
+Response (shortened):
 
 ```json
 {
@@ -113,166 +115,52 @@ close, raise it such as `1.2`.
   "obstacle": "chair",
   "distance": 1.2,
   "detections": [
-    {
-      "label": "chair",
-      "confidence": 0.83,
-      "distance": 1.2,
-      "position": "center",
-      "bbox": [120, 180, 500, 700],
-      "action": "RIGHT",
-      "source": "yolo"
-    }
+    { "label": "chair", "confidence": 0.83, "distance": 1.2, "position": "center",
+      "bbox": [120, 180, 500, 700], "action": "RIGHT", "source": "yolo" }
   ],
-  "speak": true,
   "reason": "left/center risk is higher; right side is safer",
-  "zones": {"left": 3.2, "center": 0.6, "right": 0.1}
+  "zones": { "left": 3.2, "center": 0.6, "right": 0.1 }
 }
 ```
 
-`bbox` is normalized to `0..1000`: `[x1, y1, x2, y2]`.
+`bbox` is normalized to `0..1000` as `[x1, y1, x2, y2]`.
 
-## Files
+## Configuration
 
-- `main.py` - FastAPI entrypoint
-- `detector.py` - local object detection
-- `navigator.py` - command/action decision logic
-- `speaker.py` - TTS and speaker output
-- `schemas.py` - request/response models
-- `image_utils.py` - base64 image helpers
-- `webcam_debug.py` - laptop-camera test client
-- `scripts/speak_output.py` - speak one command/message aloud
-- `training/` - home/office fine-tuning dataset config and notes
-- `scripts/collect_frames.py` - collect annotation images
-- `scripts/train_home_office.py` - fine-tune YOLO on annotated home/office data
-- `firmware/platformio_esp32_camera_client/` - ESP32 camera client
+All tuning lives in `.env` (see `.env.example`). The most useful knobs:
 
-## Webcam Debug Controls
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CAMERA_VERTICAL_FOV_DEG` | `55` | camera field of view used for distance estimation |
+| `DISTANCE_SCALE` | `1.0` | lower (≈0.8) if distances read too far, raise (≈1.2) if too close |
+| `DISTANCE_SMOOTHING_ALPHA` | `0.45` | temporal smoothing of distance |
+| `TTS_REPEAT_SECONDS` | `5.0` | minimum gap between repeated messages |
+| `TTS_DANGER_REPEAT_SECONDS` | `1.5` | repeat gap for danger messages |
+| `ELEVENLABS_API_KEY` | *(empty)* | enables ElevenLabs voice; otherwise macOS `say` |
 
-- `Q` / `Esc` - quit
-- `+` - increase simulated ultrasonic distance
-- `-` - decrease simulated ultrasonic distance
-- `0` - reset simulated distance to `5.0m`
+## Fine-tuning for home & office
 
-## ESP32 Camera Test
-
-Laptop webcam debug uses `webcam_debug.py`. ESP32 camera testing uses a separate
-PlatformIO project:
+The base COCO model misses things like walls, doorways and stairs. `training/` contains the dataset config and a step-by-step guide:
 
 ```bash
-firmware/platformio_esp32_camera_client
+python scripts/collect_frames.py --out datasets/home_office/raw --every 1.0
+# annotate in YOLO format (Label Studio, Roboflow, CVAT or LabelImg)
+python scripts/train_home_office.py --data training/home_office_dataset.yaml --base yolo11n.pt --epochs 80 --imgsz 640
 ```
 
-Edit `src/wifi_config.h` before flashing:
+Then point `YOLO_MODEL` in `.env` at `runs/detect/home_office_yolo/weights/best.pt`. More detail in [`training/README.md`](training/README.md) and [`TRAINING_GUIDE.md`](TRAINING_GUIDE.md).
 
-```cpp
-static const char* WIFI_SSID = "YOUR_WIFI";
-static const char* WIFI_PASSWORD = "YOUR_PASSWORD";
-static const char* BACKEND_URL = "http://10.9.99.2:8000/analyze";
-```
+## Project structure
 
-If `src/wifi_config.h` does not exist yet:
-
-```bash
-cp firmware/platformio_esp32_camera_client/src/wifi_config.example.h \
-   firmware/platformio_esp32_camera_client/src/wifi_config.h
-```
-
-`wifi_config.h` is intentionally ignored by git because it contains local Wi-Fi
-credentials.
-
-Available PlatformIO environments:
-
-- `freenove_esp32_s3_wroom`
-- `seeed_xiao_esp32s3_sense`
-
-The ESP32 sends camera JPEG frames to the laptop backend and prints the backend
-`command`, `obstacle`, and `message` in Serial Monitor.
-The ESP32 request sets `"speak": true`, so non-clear navigation commands are
-spoken aloud on the laptop backend.
-
-## ESP32 HC-SR04 and Buzzers
-
-The ESP32 firmware now reads HC-SR04 before every camera upload and sends the
-real sensor distance as `distance` in `POST /analyze`. The backend uses this as
-the primary close-range distance signal and fuses it with YOLO bbox distance.
-
-Configure hardware pins in:
-
-```bash
-firmware/platformio_esp32_camera_client/src/wifi_config.h
-```
-
-Start from the example:
-
-```cpp
-#define ULTRASONIC_TRIG_GPIO 1
-#define ULTRASONIC_ECHO_GPIO 2
-#define BUZZER_LEFT_GPIO 41
-#define BUZZER_RIGHT_GPIO 42
-#define BUZZER_ACTIVE_HIGH 1
-#define ULTRASONIC_MAX_DISTANCE_M 4.5f
-```
-
-Do not use camera pins from `camera_pins.h`. On the Freenove ESP32-S3 camera
-setup, GPIO `6` and `7` are camera pins, so they cannot be used for buzzers while
-the camera is enabled.
-
-HC-SR04 echo is commonly 5V. ESP32 GPIO is 3.3V, so use a voltage divider or
-level shifter on `ECHO`.
-
-Buzzer patterns:
-
-- `CLEAR` - both off
-- `LEFT` - left buzzer pulses
-- `RIGHT` - right buzzer pulses
-- `STOP` - both buzzers slow pulse
-- `DANGER` - both buzzers fast pulse
-
-## Speak Output Test
-
-To test laptop TTS without camera/backend:
-
-```bash
-python3 scripts/speak_output.py "Chair one meter ahead, go left"
-```
-
-If `ELEVENLABS_API_KEY` is configured, `speaker.py` uses ElevenLabs. Otherwise it
-falls back to macOS `say`.
-
-Live camera and ESP32 requests set `"speak": true`, so the backend speaks
-non-clear navigation commands. Repeated messages are throttled by:
-
-```bash
-TTS_REPEAT_SECONDS=5.0
-TTS_DANGER_REPEAT_SECONDS=1.5
-```
-
-## GitHub CI/CD
-
-This project includes GitHub Actions in `.github/workflows/ci.yml`.
-
-On every push and pull request it:
-
-- installs Python dependencies
-- compiles all Python files
-- builds ESP32 firmware for both PlatformIO environments
-- uploads built firmware binaries as GitHub Actions artifacts
-
-First-time GitHub publish:
-
-```bash
-cd /Users/ax1le/Downloads/zakassomsarobotics-lastbranch
-git init
-git branch -M lastbranch
-git add .
-git commit -m "Initial smart glasses MVP"
-gh auth login
-gh repo create zakassomsarobotics --private --source=. --remote=origin --push
-```
-
-If the GitHub repo already exists:
-
-```bash
-git remote add origin YOUR_GITHUB_REPO_URL
-git push -u origin lastbranch
+```text
+main.py            FastAPI entrypoint (/analyze)
+detector.py        local YOLO object detection
+navigator.py       risk scoring and command decisions
+speaker.py         text-to-speech output
+schemas.py         request / response models
+image_utils.py     base64 image helpers
+webcam_debug.py    laptop-camera test client
+scripts/           data collection, auto-labelling, training, TTS tests
+training/          home / office dataset config and notes
+firmware/          PlatformIO ESP32-S3 camera client
 ```
